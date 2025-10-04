@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tombola - Visualizzatore</title>
+    <link rel="stylesheet" href="/css/viewer.css">
+</head>
+<body>
+    <div class="board-container">
+        <h2 class="board-title">Tabellone Tombola</h2>
+        <div class="number-board" id="numberBoard"></div>
+    </div>
+    <div class="stats-container">
+        <div class="stats-card">
+            <h3>📊 Progresso</h3>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="progressText" class="progress-text">0 / 90 numeri estratti (0%)</div>
+        </div>
+
+        <div class="stats-card">
+            <h3>🎯 Numeri Estratti</h3>
+            <div class="called-list" id="calledList"></div>
+        </div>
+    </div>
+    <script>
+        let ws;
+        let gameState = { numbers: [], calledNumbers: [] };
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+            ws.onopen = function() {
+                ws.send(JSON.stringify({ type: 'authenticate', role: 'viewer' }));
+                updateConnectionStatus(true);
+            };
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                if (message.type === 'gameUpdate') {
+                    const oldCalledNumbers = gameState.calledNumbers.length;
+                    gameState = message.data;
+                    updateDisplay();
+                    if (gameState.calledNumbers.length > oldCalledNumbers && gameState.calledNumbers.length > 0) {
+                        showLastCalled(gameState.calledNumbers[gameState.calledNumbers.length - 1]);
+                    }
+                }
+            };
+            ws.onclose = function() {
+                updateConnectionStatus(false);
+                setTimeout(connectWebSocket, 3000);
+            };
+            ws.onerror = function() {
+                updateConnectionStatus(false);
+            };
+        }
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.className = 'connection-status connected';
+                status.innerHTML = '🟢 Connesso';
+            } else {
+                status.className = 'connection-status disconnected';
+                status.innerHTML = '🔴 Tentativo di riconnessione...';
+            }
+        }
+        function showLastCalled(number) {
+            const lastCalledDiv = document.getElementById('lastCalled');
+            const lastNumberDiv = document.getElementById('lastNumber');
+            
+            lastNumberDiv.textContent = number;
+            lastCalledDiv.style.display = 'block';
+        }
+        function updateDisplay() {
+            updateBoard();
+            updateStats();
+            updateCalledNumbers();
+            
+            if (gameState.calledNumbers.length === 0) {
+                document.getElementById('lastCalled').style.display = 'none';
+            }
+        }
+        function updateBoard() {
+            const board = document.getElementById('numberBoard');
+            board.innerHTML = '';
+
+            for (let i = 1; i <= 90; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'number-cell';
+                cell.textContent = i;
+                
+                const numberState = gameState.numbers[i - 1];
+                if (numberState && numberState.called) {
+                    cell.classList.add('called');
+                }
+                
+                board.appendChild(cell);
+            }
+        }
+        function updateStats() {
+            const called = gameState.calledNumbers.length;
+            const percentage = Math.round((called / 90) * 100);
+            
+            document.getElementById('progressFill').style.width = percentage + '%';
+            document.getElementById('progressText').textContent = 
+                `${called} / 90 numeri estratti (${percentage}%)`;
+        }
+        function updateCalledNumbers() {
+            const calledList = document.getElementById('calledList');
+            calledList.innerHTML = '';
+            const recentNumbers = [...gameState.calledNumbers].reverse().slice(0, 20);
+            recentNumbers.forEach((number, index) => {
+                const span = document.createElement('span');
+                span.className = 'called-number';
+                span.textContent = number;
+                if (index === 0 && gameState.calledNumbers.length > 0) {
+                    span.style.transform = 'scale(1.1)';
+                    span.style.boxShadow = '0 5px 20px rgba(255, 107, 107, 0.6)';
+                }
+                calledList.appendChild(span);
+            });
+        }
+        connectWebSocket();
+    </script>
+</body>
+</html>

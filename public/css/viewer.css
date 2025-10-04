@@ -1,0 +1,181 @@
+body {
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+}
+.header {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    text-align: center;
+}
+h1 {
+    color: #333;
+    margin: 0;
+    font-size: 2.5em;
+}
+.board-container {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+.board-title {
+    text-align: center;
+    color: #333;
+    margin-bottom: 30px;
+    font-size: 1.8em;
+}
+.number-board {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 8px;
+    margin: 20px 0;
+    max-width: 1450px;
+    margin-left: auto;
+    margin-right: 50px;
+}
+.number-cell {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7.5em;
+    font-weight: bold;
+    border-radius: 12px;
+    transition: all 0.5s ease;
+    border: 3px solid transparent;
+}
+.number-cell:not(.called) {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    color: #6c757d;
+}
+.number-cell.called {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+    color: black;
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+    animation: numberCalled 0.8s ease-in-out;
+}
+@keyframes numberCalled {
+    0% { 
+        transform: scale(1); 
+        box-shadow: 0 0 0 rgba(255, 107, 107, 0);
+    }
+    50% { 
+        transform: scale(1.2); 
+        box-shadow: 0 5px 30px rgba(255, 107, 107, 0.6);
+    }
+    100% { 
+        transform: scale(1.05); 
+        box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+    }
+}
+.stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+.stats-card {
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.stats-card h3 {
+    margin-top: 0;
+    color: #333;
+    font-size: 1.4em;
+    text-align: center;
+}
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 15px 0;
+}
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff6b6b 0%, #ee5a52 100%);
+    border-radius: 10px;
+    transition: width 0.5s ease;
+}
+.progress-text {
+    text-align: center;
+    font-weight: bold;
+    color: #333;
+    margin-top: 10px;
+}
+.called-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+}
+.called-number {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 1.2em;
+    box-shadow: 0 3px 10px rgba(255, 107, 107, 0.3);
+    animation: fadeInNumber 0.5s ease-in-out;
+}
+@keyframes fadeInNumber {
+    from { 
+        opacity: 0; 
+        transform: translateY(-10px) scale(0.8); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0) scale(1); 
+    }
+}
+.last-called {
+    text-align: center;
+    padding: 30px;
+    background: white;
+    border-radius: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.last-number {
+    font-size: 4em;
+    font-weight: bold;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0;
+}
+.last-text {
+    color: #666;
+    font-size: 1.2em;
+    margin-top: 10px;
+}
+@media (max-width: 768px) {
+    .number-board {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 5px;
+    }
+    
+    .number-cell {
+        font-size: 1.1em;
+    }
+    
+    .last-number {
+        font-size: 2.5em;
+    }
+    
+    .stats-container {
+        grid-template-columns: 1fr;
+    }
+}

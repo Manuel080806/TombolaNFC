@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tombola - Amministratore</title>
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <div class="header">
+        <h1>🎲 Tombola - Amministratore</h1>
+        <div class="controls">
+            <input type="number" id="numberInput" min="1" max="90" placeholder="1-90">
+            <button class="call-btn" onclick="callNumber()">Estrai Numero</button>
+            <button class="reset-btn" onclick="resetGame()">Reset Gioco</button>
+        </div>
+    </div>
+    <div id="status"></div>
+    <div class="board-container">
+        <h3>Tabellone Tombola</h3>
+        <div class="number-board" id="numberBoard"></div>
+    </div>
+    <div class="called-numbers">
+        <h3>Numeri Estratti (<span id="calledCount">0</span>/90)</h3>
+        <div class="called-list" id="calledList"></div>
+    </div>
+    <script>
+        let ws;
+        let gameState = { numbers: [], calledNumbers: [] };
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+            ws.onopen = function() {
+                ws.send(JSON.stringify({ type: 'authenticate', role: 'admin' }));
+                showStatus('Connesso al server', 'success');
+            };
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                if (message.type === 'gameUpdate') {
+                    gameState = message.data;
+                    updateDisplay();
+                }
+            };
+            ws.onclose = function() {
+                showStatus('Connessione persa. Tentativo di riconnessione...', 'error');
+                setTimeout(connectWebSocket, 3000);
+            };
+            ws.onerror = function() {
+                showStatus('Errore di connessione', 'error');
+            };
+        }
+        function callNumber() {
+            const input = document.getElementById('numberInput');
+            const number = parseInt(input.value);
+            if (number >= 1 && number <= 90) {
+                ws.send(JSON.stringify({ type: 'callNumber', number: number }));
+                input.value = '';
+            } else {
+                showStatus('Inserisci un numero tra 1 e 90', 'error');
+            }
+        }
+        function resetGame() {
+            if (confirm('Sei sicuro di voler resettare il gioco?')) {
+                ws.send(JSON.stringify({ type: 'resetGame' }));
+            }
+        }
+        function updateDisplay() {
+            updateBoard();
+            updateCalledNumbers();
+        }
+        function updateBoard() {
+            const board = document.getElementById('numberBoard');
+            board.innerHTML = '';
+            for (let i = 1; i <= 90; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'number-cell';
+                cell.textContent = i
+                const numberState = gameState.numbers[i - 1];
+                if (numberState && numberState.called) {
+                    cell.classList.add('called');
+                } else {
+                    cell.onclick = () => {
+                        document.getElementById('numberInput').value = i;
+                    };
+                }
+                board.appendChild(cell);
+            }
+        }
+        function updateCalledNumbers() {
+            const calledList = document.getElementById('calledList');
+            const calledCount = document.getElementById('calledCount');
+            calledList.innerHTML = '';
+            calledCount.textContent = gameState.calledNumbers.length;
+            gameState.calledNumbers.forEach(number => {
+                const span = document.createElement('span');
+                span.className = 'called-number';
+                span.textContent = number;
+                calledList.appendChild(span);
+            });
+        }
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+            setTimeout(() => {
+                status.textContent = '';
+                status.className = '';
+            }, 3000);
+        }
+        document.getElementById('numberInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                callNumber();
+            }
+        });
+        connectWebSocket();
+    </script>
+</body>
+</html>
