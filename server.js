@@ -94,6 +94,9 @@ app.get('/', (req, res) => {
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
+app.get('/nfc', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'nfc.html'));
+});
 app.get('/viewer', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
@@ -178,8 +181,9 @@ function saveExtraction(partitaId, numero) {
         console.log(`Numero chiamato: ${numero}`);
     });
 }
+const HOST = "localhost";
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT,HOST, () => {
     console.log(`Server in esecuzione su porta ${PORT}`);
     console.log(`Admin: http://localhost:${PORT}/admin`);
     console.log(`Viewer: http://localhost:${PORT}/viewer`);

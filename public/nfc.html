@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lettore NFC - Tombola</title>
+    <link rel="stylesheet" href="/css/nfc.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                <h1>🎲 Lettore NFC Tombola</h1>
+                <div class="subtitle">Estrazione automatica tramite card NFC</div>
+            </div>
+
+            <div id="browserAlert" class="alert">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-content">
+                    <div class="alert-title">Browser non supportato</div>
+                    <div class="alert-text">Usa Google Chrome o Microsoft Edge</div>
+                </div>
+            </div>
+            
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-dot" id="serialDot"></div>
+                    <div class="status-text">Lettore: <span id="serialStatus">Disconnesso</span></div>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="wsDot"></div>
+                    <div class="status-text">Server: <span id="wsStatus">Disconnesso</span></div>
+                </div>
+            </div>
+
+            <div class="game-info">
+                <div class="game-info-item">
+                    <span class="game-info-label">Partita ID:</span>
+                    <span class="game-info-value" id="gameId">-</span>
+                </div>
+                <div class="game-info-item">
+                    <span class="game-info-label">Numeri estratti:</span>
+                    <span class="game-info-value" id="extractedCount">0 / 90</span>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" id="connectBtn" onclick="connetti()">
+                🔌 Connetti Lettore NFC
+            </button>
+            <button class="btn btn-danger" id="disconnectBtn" onclick="disconnetti()" style="display: none;">
+                ⏹️ Disconnetti
+            </button>
+        </div>
+
+        <div class="card">
+            <div class="display" id="display">
+                <div class="waiting">In attesa di card...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="log">
+                <div class="log-title">Log Attività</div>
+                <div id="logContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let serialPort = null;
+        let serialReader = null;
+        let ws = null;
+        let buffer = new Uint8Array(0);
+        let isRunning = false;
+        let currentGameId = null;
+        let extractedNumbers = [];
+
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+        function concatenate(a, b) {
+            const result = new Uint8Array(a.length + b.length);
+            result.set(a);
+            result.set(b, a.length);
+            return result;
+        }
+
+        function addLog(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = '<span class="log-time">' + time + '</span> ' + message;
+            container.insertBefore(entry, container.firstChild);
+            while (container.children.length > 15) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateSerialStatus(connected) {
+            const dot = document.getElementById('serialDot');
+            const status = document.getElementById('serialStatus');
+            if (connected) {
+                dot.classList.add('active');
+                status.textContent = 'Connesso';
+            } else {
+                dot.classList.remove('active');
+                status.textContent = 'Disconnesso';
+            }
+        }
+
+        function updateWsStatus(connected) {
+            const dot = document.getElementById('wsDot');
+            const status = document.getElementById('wsStatus');
+            if (connected) {
+                dot.classList.add('active');
+                status.textContent = 'Connesso';
+            } else {
+                dot.classList.remove('active');
+                status.textContent = 'Disconnesso';
+            }
+        }
+
+        function updateGameInfo() {
+            document.getElementById('gameId').textContent = currentGameId || '-';
+            document.getElementById('extractedCount').textContent = extractedNumbers.length + ' / 90';
+        }
+
+        function mostraNumero(numero) {
+            const display = document.getElementById('display');
+            display.classList.add('pulse');
+            display.innerHTML = '<div class="numero-label">NUMERO ESTRATTO</div><div class="numero">' + numero + '</div>';
+            setTimeout(() => display.classList.remove('pulse'), 500);
+            playBeep();
+        }
+
+        function playBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = 800;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.1);
+            } catch (e) {}
+        }
+
+        function inviaNumeroAlServer(numero) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'callNumber',
+                    number: numero
+                }));
+                addLog('📤 Numero ' + numero + ' inviato al server', 'info');
+                return true;
+            } else {
+                addLog('⚠ Server non connesso', 'warning');
+                return false;
+            }
+        }
+
+        function createFrame(data) {
+            const preamble = new Uint8Array([0x00, 0x00, 0xFF]);
+            const length = data.length + 1;
+            const lengthChecksum = (~length + 1) & 0xFF;
+            const tfi = 0xD4;
+            let sum = tfi;
+            for (let i = 0; i < data.length; i++) sum += data[i];
+            const dataChecksum = (~sum + 1) & 0xFF;
+            return concatenate(concatenate(concatenate(preamble, new Uint8Array([length, lengthChecksum, tfi])), data), new Uint8Array([dataChecksum, 0x00]));
+        }
+
+        function findAck(buf) {
+            const ack = [0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00];
+            for (let i = 0; i <= buf.length - 6; i++) {
+                let match = true;
+                for (let j = 0; j < 6; j++) {
+                    if (buf[i + j] !== ack[j]) { match = false; break; }
+                }
+                if (match) return i;
+            }
+            return -1;
+        }
+
+        function parseFrame(buf) {
+            if (buf.length < 6) return null;
+            let idx = -1;
+            for (let i = 0; i < buf.length - 2; i++) {
+                if (buf[i] === 0x00 && buf[i + 1] === 0x00 && buf[i + 2] === 0xFF) {
+                    idx = i;
+                    break;
+                }
+            }
+            if (idx === -1) return null;
+            const start = idx + 3;
+            if (buf.length < start + 2) return null;
+            const len = buf[start];
+            const lcs = buf[start + 1];
+            if (((len + lcs) & 0xFF) !== 0) return null;
+            if (buf.length < start + 2 + len + 2) return null;
+            return buf.slice(start + 3, start + 2 + len);
+        }
+
+        async function sendCommand(command, timeout = 2000) {
+            const frame = createFrame(command);
+            const writer = serialPort.writable.getWriter();
+            await writer.write(frame);
+            writer.releaseLock();
+            const startTime = Date.now();
+            buffer = new Uint8Array(0);
+            while (Date.now() - startTime < timeout) {
+                await sleep(10);
+                const ackIndex = findAck(buffer);
+                if (ackIndex !== -1) buffer = buffer.slice(ackIndex + 6);
+                const response = parseFrame(buffer);
+                if (response) {
+                    buffer = new Uint8Array(0);
+                    return response;
+                }
+            }
+            throw new Error('Timeout');
+        }
+
+        async function authenticateBlock(uid, block, keyType, key) {
+            const cmd = concatenate(concatenate(new Uint8Array([0x40, 0x01, keyType, block]), key), uid);
+            try {
+                const response = await sendCommand(cmd, 500);
+                return response[0] === 0x41 && response[1] === 0x00;
+            } catch { return false; }
+        }
+
+        async function readBlock(block) {
+            const response = await sendCommand(new Uint8Array([0x40, 0x01, 0x30, block]), 500);
+            if (response[0] === 0x41 && response[1] === 0x00) return response.slice(2, 18);
+            throw new Error('Read failed');
+        }
+
+        async function leggiNumero(uid) {
+            const key = new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+            const keyType = 0x60;
+            for (let block = 0; block < 16; block++) {
+                try {
+                    if (block % 4 === 0) {
+                        const auth = await authenticateBlock(uid, block, keyType, key);
+                        if (!auth) continue;
+                    }
+                    const data = await readBlock(block);
+                    const text = String.fromCharCode(...data).replace(/[\\x00-\\x1F\\x7F-\\xFF]/g, '');
+                    const match = text.match(/Numero\\s+(\\d+)/i);
+                    if (match) return parseInt(match[1], 10).toString();
+                } catch { continue; }
+            }
+            return null;
+        }
+
+        async function connetti() {
+            if (!('serial' in navigator)) {
+                document.getElementById('browserAlert').style.display = 'flex';
+                addLog('Browser non supportato', 'error');
+                return;
+            }
+
+            try {
+                addLog('Apertura porta seriale...', 'info');
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ baudRate: 115200 });
+                updateSerialStatus(true);
+                addLog('✓ Porta seriale aperta', 'success');
+
+                serialReader = serialPort.readable.getReader();
+                (async () => {
+                    try {
+                        while (true) {
+                            const { value, done } = await serialReader.read();
+                            if (done) break;
+                            buffer = concatenate(buffer, value);
+                        }
+                    } catch (e) {}
+                })();
+
+                const writer = serialPort.writable.getWriter();
+                await writer.write(new Uint8Array([0x55, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+                writer.releaseLock();
+                await sleep(100);
+
+                const version = await sendCommand(new Uint8Array([0x02]));
+                addLog('✓ Firmware v' + version[1] + '.' + version[2], 'success');
+
+                await sendCommand(new Uint8Array([0x14, 0x01, 0x00, 0x00]));
+                addLog('✓ SAM configurato', 'success');
+
+                addLog('Connessione al server tombola...', 'info');
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(protocol + '//' + window.location.host);
+                
+                ws.onopen = () => {
+                    updateWsStatus(true);
+                    addLog('✓ Connesso al server tombola', 'success');
+                    // Autenticazione come admin per poter chiamare i numeri
+                    ws.send(JSON.stringify({ type: 'authenticate', role: 'admin' }));
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'gameUpdate') {
+                            extractedNumbers = data.data.calledNumbers;
+                            updateGameInfo();
+                        }
+                    } catch (e) {}
+                };
+                
+                ws.onerror = () => {
+                    updateWsStatus(false);
+                    addLog('❌ Errore server', 'error');
+                };
+                
+                ws.onclose = () => {
+                    updateWsStatus(false);
+                    addLog('Server disconnesso', 'warning');
+                };
+
+                isRunning = true;
+                document.getElementById('connectBtn').style.display = 'none';
+                document.getElementById('disconnectBtn').style.display = 'block';
+                addLog('🎲 Pronto per estrazione card', 'success');
+                pollCard();
+
+            } catch (error) {
+                addLog('Errore: ' + error.message, 'error');
+                disconnetti();
+            }
+        }
+
+        async function pollCard() {
+            while (isRunning) {
+                try {
+                    const response = await sendCommand(new Uint8Array([0x4A, 0x01, 0x00]), 300);
+                    if (response[0] === 0x4B && response[1] > 0) {
+                        const uidLength = response[5];
+                        const uid = response.slice(6, 6 + uidLength);
+                        const numero = await leggiNumero(uid);
+                        
+                        if (numero) {
+                            const num = parseInt(numero);
+                            if (num >= 1 && num <= 90) {
+                                if (!extractedNumbers.includes(num)) {
+                                    mostraNumero(numero);
+                                    addLog('✓ Card letta: ' + numero, 'success');
+                                    inviaNumeroAlServer(num);
+                                } else {
+                                    addLog('⚠ Numero ' + numero + ' già estratto', 'warning');
+                                }
+                            } else {
+                                addLog('⚠ Numero ' + numero + ' non valido (deve essere 1-90)', 'warning');
+                            }
+                        }
+                        await sleep(500);
+                    }
+                } catch (e) {}
+                await sleep(100);
+            }
+        }
+
+        async function disconnetti() {
+            isRunning = false;
+            if (serialReader) try { await serialReader.cancel(); } catch {}
+            if (serialPort) try { await serialPort.close(); } catch {}
+            if (ws) ws.close();
+            serialPort = null;
+            serialReader = null;
+            ws = null;
+            updateSerialStatus(false);
+            updateWsStatus(false);
+            document.getElementById('connectBtn').style.display = 'block';
+            document.getElementById('disconnectBtn').style.display = 'none';
+            addLog('Disconnesso', 'info');
+        }
+
+        window.onload = () => {
+            if (!('serial' in navigator)) {
+                document.getElementById('browserAlert').style.display = 'flex';
+                document.getElementById('connectBtn').disabled = true;
+            }
+        };
+    </script>
+</body>
+</html>
