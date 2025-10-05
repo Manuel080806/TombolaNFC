@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -241,37 +242,30 @@
         async function leggiNumero(uid) {
             const key = new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
             const keyType = 0x60;
-            addLog('🔍 Scansione blocchi card...', 'info');
             
-            for (let block = 0; block < 16; block++) {
-                try {
-                    if (block % 4 === 0) {
-                        const auth = await authenticateBlock(uid, block, keyType, key);
-                        if (!auth) {
-                            addLog('⚠ Auth fallita blocco ' + block, 'warning');
-                            continue;
+            try {
+                for (let block = 0; block < 16; block++) {
+                    try {
+                        if (block % 4 === 0) {
+                            const auth = await authenticateBlock(uid, block, keyType, key);
+                            if (!auth) continue;
                         }
-                    }
-                    const data = await readBlock(block);
-                    // FIX: backslash singole per regex corretta
-                    const text = String.fromCharCode(...data).replace(/[\x00-\x1F\x7F-\xFF]/g, '');
-                    addLog('📖 Blocco ' + block + ': "' + text + '"', 'info');
-                    
-                    // Cerca pattern più flessibili
-                    const match = text.match(/Numero\s+(\d+)/i) || text.match(/(\d+)/);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        if (num >= 1 && num <= 90) {
-                            addLog('✓ Trovato numero valido: ' + num, 'success');
-                            return num.toString();
+                        
+                        const data = await readBlock(block);
+                        const text = String.fromCharCode(...data).replace(/[\x00-\x1F\x7F-\xFF]/g, '');
+                        
+                        const match = text.match(/Numero\s+(\d+)/i);
+                        if (match) {
+                            return match[1];
                         }
+                    } catch (err) {
+                        continue;
                     }
-                } catch (e) { 
-                    addLog('❌ Errore lettura blocco ' + block, 'error');
-                    continue; 
                 }
+            } catch (err) {
+                return null;
             }
-            addLog('⚠ Nessun numero trovato sulla card', 'warning');
+            
             return null;
         }
 
@@ -318,7 +312,6 @@
                 ws.onopen = () => {
                     updateWsStatus(true);
                     addLog('✓ Connesso al server tombola', 'success');
-                    // Autenticazione come admin per poter chiamare i numeri
                     ws.send(JSON.stringify({ type: 'authenticate', role: 'admin' }));
                 };
                 
@@ -361,20 +354,20 @@
                     if (response[0] === 0x4B && response[1] > 0) {
                         const uidLength = response[5];
                         const uid = response.slice(6, 6 + uidLength);
-                        const numero = await leggiNumero(uid);
+                        const numeroStr = await leggiNumero(uid);
                         
-                        if (numero) {
-                            const num = parseInt(numero);
-                            if (num >= 1 && num <= 90) {
-                                if (!extractedNumbers.includes(num)) {
-                                    mostraNumero(numero);
-                                    addLog('✓ Card letta: ' + numero, 'success');
-                                    inviaNumeroAlServer(num);
+                        if (numeroStr) {
+                            const numero = parseInt(numeroStr, 10);
+                            if (numero >= 1 && numero <= 90) {
+                                if (!extractedNumbers.includes(numero)) {
+                                    mostraNumero(numeroStr);
+                                    addLog('✓ Card letta: Numero ' + numeroStr, 'success');
+                                    inviaNumeroAlServer(numero);
                                 } else {
-                                    addLog('⚠ Numero ' + numero + ' già estratto', 'warning');
+                                    addLog('⚠ Numero ' + numeroStr + ' già estratto', 'warning');
                                 }
                             } else {
-                                addLog('⚠ Numero ' + numero + ' non valido (deve essere 1-90)', 'warning');
+                                addLog('⚠ Numero ' + numeroStr + ' non valido (deve essere 1-90)', 'warning');
                             }
                         }
                         await sleep(500);
