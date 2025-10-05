@@ -119,6 +119,7 @@ function broadcastUpdate() {
     });
 }
 wss.on('connection', (ws) => {
+    clients.set(ws, { role: null });
     console.log('Nuova connessione WebSocket');
     ws.on('message', (message) => {
         try {
