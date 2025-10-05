@@ -241,18 +241,37 @@
         async function leggiNumero(uid) {
             const key = new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
             const keyType = 0x60;
+            addLog('🔍 Scansione blocchi card...', 'info');
+            
             for (let block = 0; block < 16; block++) {
                 try {
                     if (block % 4 === 0) {
                         const auth = await authenticateBlock(uid, block, keyType, key);
-                        if (!auth) continue;
+                        if (!auth) {
+                            addLog('⚠ Auth fallita blocco ' + block, 'warning');
+                            continue;
+                        }
                     }
                     const data = await readBlock(block);
-                    const text = String.fromCharCode(...data).replace(/[\\x00-\\x1F\\x7F-\\xFF]/g, '');
-                    const match = text.match(/Numero\\s+(\\d+)/i);
-                    if (match) return parseInt(match[1], 10).toString();
-                } catch { continue; }
+                    // FIX: backslash singole per regex corretta
+                    const text = String.fromCharCode(...data).replace(/[\x00-\x1F\x7F-\xFF]/g, '');
+                    addLog('📖 Blocco ' + block + ': "' + text + '"', 'info');
+                    
+                    // Cerca pattern più flessibili
+                    const match = text.match(/Numero\s+(\d+)/i) || text.match(/(\d+)/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num >= 1 && num <= 90) {
+                            addLog('✓ Trovato numero valido: ' + num, 'success');
+                            return num.toString();
+                        }
+                    }
+                } catch (e) { 
+                    addLog('❌ Errore lettura blocco ' + block, 'error');
+                    continue; 
+                }
             }
+            addLog('⚠ Nessun numero trovato sulla card', 'warning');
             return null;
         }
 
