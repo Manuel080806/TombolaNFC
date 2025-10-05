@@ -57,11 +57,9 @@
         function updateConnectionStatus(connected) {
             const status = document.getElementById('connectionStatus');
             if (connected) {
-                status.className = 'connection-status connected';
-                status.innerHTML = '🟢 Connesso';
+                
             } else {
-                status.className = 'connection-status disconnected';
-                status.innerHTML = '🔴 Tentativo di riconnessione...';
+                
             }
         }
         function showLastCalled(number) {
